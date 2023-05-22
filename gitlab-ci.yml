@@ -44,9 +44,6 @@ update_pre_commit_mr:
     - git config --global user.email "$GITLAB_USER_EMAIL"
     - git config --global user.name "GitLab MR Bot"
     - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
-  script:
-    - chmod +x ./.maintenance/update_pre_commit_mr.sh
-    - /bin/bash ./.maintenance/update_pre_commit_mr.sh
 
 
 flake8:
@@ -67,8 +64,7 @@ pylint:
     - if: '$CI_PIPELINE_SOURCE != "schedule"'
   before_script:
     - apt-get update && apt-get install -y build-essential && apt-get install -y libpq-dev
-    - pip install -r requirements/local.txt
-    - pip install -r requirements/production.txt
+    - pip install -r requirements/base.txt
   script:
     - find . -type f -name "*.py" ! -path "*/migrations/*" | xargs pylint --rcfile=.pylintrc
 
@@ -83,7 +79,7 @@ pytest:
     - postgres:12
   before_script:
     - apt-get update && apt-get install -y build-essential && apt-get install -y libpq-dev
-    - pip install -r requirements/local.txt
+    - pip install -r requirements/base.txt
   variables:
     DATABASE_URL: pgsql://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres/$POSTGRES_DB
   script:
