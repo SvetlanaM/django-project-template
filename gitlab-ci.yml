@@ -1,0 +1,92 @@
+stages:
+  - pyup
+  - update_pre_commit_mr
+  - lint
+  - test
+
+variables:
+  DJANGO_READ_DOT_ENV_FILE: 'False'
+  POSTGRES_USER: 'sveta'
+  POSTGRES_PASSWORD: ''
+  POSTGRES_DB: 'test_sveta'
+  POSTGRES_HOST_AUTH_METHOD: trust
+  DJANGO_DEFAULT_FROM_EMAIL: 'no-reply@sveta.com'
+  FRONT_END_URL: 'http://localhost:8080'
+
+pyup:
+  image:
+    name: ckleemann/pyup
+    entrypoint: [""]
+  stage: pyup
+  only:
+    - schedules
+  variables:
+    GIT_STRATEGY: none
+  cache: {}
+  script:
+    - pyup --provider gitlab --provider_url=$CI_SERVER_URL --repo=$CI_PROJECT_PATH --user-token=$SCHEDULE_USER_TOKEN
+
+update_pre_commit_mr:
+  stage: update_pre_commit_mr
+  image: python:3.8.12
+  tags:
+    - docker
+  only:
+    - schedules
+  cache: {}
+  before_script:
+    - pip install pre-commit pyyaml
+    - 'command -v ssh-agent >/dev/null || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && touch ~/.ssh/known_hosts
+    - chmod 700 ~/.ssh
+    - git config --global user.email "$GITLAB_USER_EMAIL"
+    - git config --global user.name "GitLab MR Bot"
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+  script:
+    - chmod +x ./.maintenance/update_pre_commit_mr.sh
+    - /bin/bash ./.maintenance/update_pre_commit_mr.sh
+
+
+flake8:
+  stage: lint
+  image: python:3.8-alpine
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+  before_script:
+    - pip install -q flake8 flake8-isort==4.1.1 flake8-print flake8-bugbear flake8-comprehensions
+  script:
+    - flake8
+
+pylint:
+  stage: lint
+  image: python:3.8.12-slim-buster
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+  before_script:
+    - apt-get update && apt-get install -y build-essential && apt-get install -y libpq-dev
+    - pip install -r requirements/local.txt
+    - pip install -r requirements/production.txt
+  script:
+    - find . -type f -name "*.py" ! -path "*/migrations/*" | xargs pylint --rcfile=.pylintrc
+
+pytest:
+  stage: test
+  image: python:3.8.12-slim-buster
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+  tags:
+    - docker
+  services:
+    - postgres:12
+  before_script:
+    - apt-get update && apt-get install -y build-essential && apt-get install -y libpq-dev
+    - pip install -r requirements/local.txt
+  variables:
+    DATABASE_URL: pgsql://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres/$POSTGRES_DB
+  script:
+    - coverage run -m pytest tests/unit_tests
+    - coverage report
+  coverage: '/TOTAL.*\s+(\d+\%)/'

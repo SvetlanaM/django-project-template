@@ -1,0 +1,6 @@
+.*
+!.coveragerc
+!.env
+!.pylintrc
+*.pid
+temp/
